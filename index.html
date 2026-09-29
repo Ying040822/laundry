@@ -43,10 +43,13 @@ td,th{padding:10px;border-bottom:1px solid var(--ln);text-align:left;font-size:1
 <script>
 const KEY='laundry_v1';
 let db;try{db=JSON.parse(localStorage.getItem(KEY))}catch(e){}
-db=db||{shop:{name:'ร้านซักรีด',phone:'',addr:'',logo:'',foot:'ขอบคุณที่ใช้บริการ'},
- garments:['เสื้อ','เสื้อโปโล','กางเกงขาสั้น','กางเกงขายาว'].map((n,i)=>({id:'g'+i,name:n,price:20})),
+db=db||{shop:{name:'ร้านซักรีด',phone:'',addr:'',logo:'',qr:'',tax:'',foot:'ขอบคุณที่ใช้บริการ'},
+ garments:[['เสื้อ','ชิ้น',20],['เสื้อโปโล','ชิ้น',25],['กางเกงขาสั้น','ชิ้น',20],['กางเกงขายาว','ชิ้น',25],['ผ้ารีด','ชิ้น',10],['ซักรีด','ชิ้น',30],['ซักพับ','กก.',40],['ซักแห้ง','ชิ้น',80],['เครื่องนอน','ชิ้น',150]].map((a,i)=>({id:'g'+i,name:a[0],unit:a[1],price:a[2]})),
  packages:[{id:'p1',name:'รายเดือน 50 ชิ้น',type:'รายเดือน',pieces:50,price:700,days:30}],
  customers:[],orders:[],ledger:[],rc:[],seq:0};
+db.garments.forEach(g=>{if(!g.unit)g.unit='ชิ้น'});
+db.customers.forEach(c=>{if(c.line==null)c.line=''});
+const UN=['ชิ้น','กก.'];
 const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(db))}catch(e){alert('บันทึกไม่ได้ พื้นที่เต็มหรือถูกบล็อก')}};
 const $=s=>document.querySelector(s),uid=()=>Math.random().toString(36).slice(2,9);
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -76,11 +79,11 @@ function showRc(r){
  const m=modal(`<div id="rc"><div class="c">${s.logo?`<img src="${s.logo}"><br>`:''}<b style="font-size:16px">${esc(s.name)}</b><br>${s.phone?'โทร '+esc(s.phone)+'<br>':''}${esc(s.addr)}</div><hr>
  <div class="l"><span>เลขที่ ${r.no}</span><span>${dt(r.date)} ${r.time||''}</span></div>
  <div>ลูกค้า: <b>${esc(r.name)}</b>${r.phone?' ('+esc(r.phone)+')':''}</div><hr>
- ${r.lines.map(l=>`<div class="l"><span>${esc(l.t)}${l.q?' x'+l.q:''}</span><span>${l.a===''?'':fm(l.a)}</span></div>`).join('')}<hr>
+ ${r.lines.map(l=>`<div class="l"><span>${esc(l.t)}${l.q?' x'+l.q+(l.unit||''):''}</span><span>${l.price!=null?'@'+fm(l.price):''}</span></div>${l.note||l.a!==''?`<div class="l"><span style="font-size:12px;color:#444">${l.note||''}</span><span>${l.a===''?'':fm(l.a)+' บาท'}</span></div>`:''}`).join('')}<hr>
  <div class="l"><b>รวมเป็นเงิน</b><b>${fm(r.total)} บาท</b></div>
  ${r.left!=null?`<div class="l"><span>แพ็คเกจคงเหลือ</span><b>${r.left} ชิ้น</b></div>`:''}
  ${r.exp?`<div class="l"><span>หมดอายุ</span><span>${dt(r.exp)}</span></div>`:''}
- <hr><div class="c">${esc(s.foot)}</div></div>
+ <hr>${s.qr?`<div class="c"><img src="${s.qr}"><br><small>สแกนเพื่อชำระเงิน</small></div><hr>`:''}<div class="c">${esc(s.foot)}</div></div>
  <div class="row noprint" style="margin-top:14px"><button class="btn s sp" id="x">ปิด</button><button class="btn sp" id="p">พิมพ์ใบเสร็จ 80mm</button></div>`);
  m.querySelector('#x').onclick=m.close;m.querySelector('#p').onclick=()=>window.print();
 }
@@ -98,38 +101,45 @@ V.home=()=>{
  <h2>ใบเสร็จล่าสุด</h2>${rec.length?`<table>${rec.map(r=>`<tr><td>${r.no}</td><td>${esc(r.name)}</td><td class="r">${fm(r.total)} บาท</td><td class="r"><button class="btn sm s" onclick="reprint('${r.no}')">ดู/พิมพ์</button></td></tr>`).join('')}</table>`:'<div class="card">ยังไม่มีใบเสร็จ</div>'}`;
 };
 V.order=()=>{
- const c=cust(sel),tot=Object.values(cart).reduce((a,b)=>a+b,0),cl=calc();
+ const c=cust(sel),pieceG=db.garments.filter(g=>g.unit!='กก.'),wtG=db.garments.filter(g=>g.unit=='กก.');
+ const pcsTot=pieceG.reduce((a,g)=>a+(cart[g.id]||0),0),kgTot=wtG.reduce((a,g)=>a+(cart[g.id]||0),0),cl=calc();
  return `<h1>รับผ้า / คิดเงิน</h1>
  <label>ลูกค้า</label><select onchange="sel=this.value;draw()"><option value="">ลูกค้าทั่วไป (จ่ายรายวัน)</option>${db.customers.map(x=>`<option value="${x.id}" ${x.id==sel?'selected':''}>${esc(x.name)}${active(x)?' — เหลือ '+x.left+' ชิ้น':''}</option>`).join('')}</select>
  ${c&&active(c)?`<p><span class="tag">${esc(c.pkgName)}</span> คงเหลือ <b>${c.left}</b> ชิ้น ถึง ${dt(c.exp)}</p>`:c?'<p><span class="tag x">ไม่มีแพ็คเกจที่ใช้งานได้ — คิดราคาตามรายการ</span></p>':''}
- <h2>เลือกประเภทผ้า</h2><div class="g g3">${db.garments.map(g=>`<div class="gt ${cart[g.id]?'on':''}"><b>${esc(g.name)}</b><br><span style="font-size:14px">${fm(g.price)} บาท/ชิ้น</span><div class="q"><button onclick="qty('${g.id}',-1)">−</button><b>${cart[g.id]||0}</b><button onclick="qty('${g.id}',1)">+</button></div></div>`).join('')}</div>
- <div class="bar"><span>รวม <b>${tot}</b> ชิ้น</span>${cl.use?`<span>ใช้แพ็คเกจ ${cl.use} ชิ้น (เหลือ ${cl.left})</span>`:''}<span class="sp" style="font-size:24px;text-align:right">ต้องชำระ <b>${fm(cl.pay)}</b> บาท</span><button class="btn s" onclick="cart={};draw()">ล้าง</button><button class="btn" style="background:var(--sun);color:var(--ink);font-weight:700" onclick="checkout()">บันทึก + พิมพ์ใบเสร็จ</button></div>`;
+ <h2>รายการคิดตามชิ้น${c&&active(c)?' (ใช้แพ็คเกจได้)':''}</h2><div class="g g3">${pieceG.map(g=>`<div class="gt ${cart[g.id]?'on':''}"><b>${esc(g.name)}</b><br><span style="font-size:14px">${fm(g.price)} บาท/ชิ้น</span><div class="q"><button onclick="qty('${g.id}',-1)">−</button><b>${cart[g.id]||0}</b><button onclick="qty('${g.id}',1)">+</button></div></div>`).join('')||'<div class="card">ยังไม่มีรายการ เพิ่มได้ในหน้าตั้งค่าร้าน</div>'}</div>
+ ${wtG.length?`<h2>รายการคิดตามน้ำหนัก (กก.)</h2><div class="g g3">${wtG.map(g=>`<div class="gt ${cart[g.id]?'on':''}"><b>${esc(g.name)}</b><br><span style="font-size:14px">${fm(g.price)} บาท/กก.</span><div class="row" style="justify-content:center;margin-top:8px"><input type="number" min="0" step="0.1" style="text-align:center" value="${cart[g.id]||''}" placeholder="0" oninput="wqty('${g.id}',this.value)"></div></div>`).join('')}</div>`:''}
+ <div class="bar"><span>รวม <b>${pcsTot}</b> ชิ้น${kgTot?' + '+kgTot+' กก.':''}</span>${cl.use?`<span>ใช้แพ็คเกจ ${cl.use} ชิ้น (เหลือ ${cl.left})</span>`:''}<span class="sp" style="font-size:24px;text-align:right">ต้องชำระ <b>${fm(cl.pay)}</b> บาท</span><button class="btn s" onclick="cart={};draw()">ล้าง</button><button class="btn" style="background:var(--sun);color:var(--ink);font-weight:700" onclick="checkout()">บันทึก + พิมพ์ใบเสร็จ</button></div>`;
 };
 function qty(id,d){cart[id]=Math.max(0,(cart[id]||0)+d);if(!cart[id])delete cart[id];draw()}
+function wqty(id,v){const n=parseFloat(v);if(n>0)cart[id]=n;else delete cart[id];draw()}
 function calc(){
- const c=cust(sel),pcs=[];db.garments.forEach(g=>{for(let i=0;i<(cart[g.id]||0);i++)pcs.push(g)});
- const use=c&&active(c)?Math.min(c.left,pcs.length):0,pay=pcs.slice(use).reduce((a,g)=>a+g.price,0);
- return{pcs,use,pay,left:c&&active(c)?c.left-use:null,extra:pcs.length-use};
+ const c=cust(sel),pieceG=db.garments.filter(g=>g.unit!='กก.'),wtG=db.garments.filter(g=>g.unit=='กก.');
+ const pcsTot=pieceG.reduce((a,g)=>a+(cart[g.id]||0),0);
+ const use=c&&active(c)?Math.min(c.left,pcsTot):0;
+ let bud=use,pieceLines=[];
+ pieceG.forEach(g=>{const q=cart[g.id]||0;if(!q)return;const u=Math.min(bud,q);bud-=u;const pay=q-u;pieceLines.push({g,q,used:u,pay,amt:pay*g.price})});
+ const wtLines=wtG.filter(g=>cart[g.id]).map(g=>({g,q:cart[g.id],used:0,pay:cart[g.id],amt:cart[g.id]*g.price}));
+ const lines=pieceLines.concat(wtLines),pay=lines.reduce((a,l)=>a+l.amt,0);
+ return{lines,use,pay,left:c&&active(c)?c.left-use:null,any:lines.some(l=>l.q>0)};
 }
 function checkout(){
- const cl=calc();if(!cl.pcs.length)return alert('กรุณาเลือกจำนวนผ้าก่อน');
- const c=cust(sel),lines=db.garments.filter(g=>cart[g.id]).map(g=>({t:g.name,q:cart[g.id],a:''}));
- if(cl.use)lines.push({t:'หักจากแพ็คเกจ',q:cl.use,a:'0'});
- if(cl.extra)lines.push({t:'ชิ้นเกินแพ็คเกจ/รายวัน',q:cl.extra,a:cl.pay});
+ const cl=calc();if(!cl.any)return alert('กรุณาเลือกจำนวนผ้าก่อน');
+ const c=cust(sel);
+ const lines=cl.lines.map(l=>({t:l.g.name,q:l.q,unit:l.g.unit,price:l.g.price,a:l.pay*l.g.price,note:l.used?`ใช้แพ็คเกจ ${l.used}${l.g.unit}, จ่าย ${l.pay}${l.g.unit}`:''}));
  if(c&&cl.use){c.left=cl.left}
  const r=mkRc({kind:'order',name:c?c.name:'ลูกค้าทั่วไป',phone:c?c.phone:'',lines,total:cl.pay,left:cl.left,exp:c&&active(c)||cl.use?c.exp:''});
  if(cl.pay>0)db.ledger.push({id:uid(),date:r.date,type:'in',title:'ซักรีด '+r.name+' ('+r.no+')',cat:'ค่าบริการซักรีด',amt:cl.pay,rc:r.no});
  save();cart={};draw();showRc(r);
 }
 V.cust=()=>{
- const l=db.customers.filter(c=>(c.name+c.phone).includes(q));
- return `<h1>ลูกค้า</h1><div class="row"><input class="sp" placeholder="ค้นหาชื่อ / เบอร์" value="${esc(q)}" oninput="q=this.value;draw();const i=document.querySelector('main input');i.focus();i.setSelectionRange(99,99)"><button class="btn" onclick="editCust()">+ เพิ่มลูกค้า</button></div><br>
- ${l.length?`<table><tr><th>ชื่อ</th><th>เบอร์</th><th>แพ็คเกจ</th><th>เหลือ</th><th></th></tr>${l.map(c=>`<tr><td>${esc(c.name)}</td><td>${esc(c.phone)}</td><td>${c.pkgId?esc(c.pkgName)+'<br><small>ถึง '+dt(c.exp)+'</small>':'-'}</td><td>${c.pkgId?`<span class="tag ${active(c)?'':'x'}">${c.left} ชิ้น</span>`:'-'}</td><td class="r"><button class="btn sm" onclick="buyPkg('${c.id}')">ซื้อ/ต่อแพ็คเกจ</button> <button class="btn sm s" onclick="editCust('${c.id}')">แก้ไข</button></td></tr>`).join('')}</table>`:'<div class="card">ยังไม่มีลูกค้า</div>'}`;
+ const l=db.customers.filter(c=>(c.name+c.phone+(c.line||'')).includes(q));
+ return `<h1>ลูกค้า</h1><div class="row"><input class="sp" placeholder="ค้นหาชื่อ / เบอร์ / ไลน์ไอดี" value="${esc(q)}" oninput="q=this.value;draw();const i=document.querySelector('main input');i.focus();i.setSelectionRange(99,99)"><button class="btn" onclick="editCust()">+ เพิ่มลูกค้า</button></div><br>
+ ${l.length?`<table><tr><th>ชื่อ</th><th>เบอร์ / ไลน์ไอดี</th><th>แพ็คเกจ</th><th>เหลือ</th><th></th></tr>${l.map(c=>`<tr><td>${esc(c.name)}</td><td>${esc(c.phone)}${c.line?'<br><small>LINE: '+esc(c.line)+'</small>':''}</td><td>${c.pkgId?esc(c.pkgName)+'<br><small>ถึง '+dt(c.exp)+'</small>':'-'}</td><td>${c.pkgId?`<span class="tag ${active(c)?'':'x'}">${c.left} ชิ้น</span>`:'-'}</td><td class="r"><button class="btn sm" onclick="buyPkg('${c.id}')">ซื้อ/ต่อแพ็คเกจ</button> <button class="btn sm s" onclick="editCust('${c.id}')">แก้ไข</button></td></tr>`).join('')}</table>`:'<div class="card">ยังไม่มีลูกค้า</div>'}`;
 };
 function editCust(id){const c=id?cust(id):{};
- form(id?'แก้ไขลูกค้า':'เพิ่มลูกค้า',[{k:'name',l:'ชื่อลูกค้า'},{k:'phone',l:'เบอร์โทร'}].concat(id&&c.pkgId?[{k:'left',l:'จำนวนคงเหลือ (ชิ้น)',t:'number'},{k:'exp',l:'วันหมดอายุ',t:'date'}]:[]),c,o=>{
+ form(id?'แก้ไขลูกค้า':'เพิ่มลูกค้า',[{k:'name',l:'ชื่อลูกค้า'},{k:'phone',l:'เบอร์โทร'},{k:'line',l:'ไลน์ไอดี (ถ้ามี)'}].concat(id&&c.pkgId?[{k:'left',l:'จำนวนคงเหลือ (ชิ้น)',t:'number'},{k:'exp',l:'วันหมดอายุ',t:'date'}]:[]),c,o=>{
   if(!o.name){alert('กรุณาใส่ชื่อ');return false}
-  if(id)Object.assign(c,o);else db.customers.push({id:uid(),name:o.name,phone:o.phone,pkgId:'',pkgName:'',left:0,exp:''});
+  if(id)Object.assign(c,o);else db.customers.push({id:uid(),name:o.name,phone:o.phone,line:o.line,pkgId:'',pkgName:'',left:0,exp:''});
   save();draw()});
  if(id){const m=document.querySelector('.md>div .row');const b=document.createElement('button');b.className='btn d';b.textContent='ลบ';b.onclick=()=>{if(confirm('ลบลูกค้านี้?')){db.customers=db.customers.filter(x=>x.id!=id);save();document.querySelector('.md').remove();draw()}};m.prepend(b)}
 }
@@ -171,11 +181,14 @@ V.set=()=>{const s=db.shop;return `<h1>ตั้งค่าร้าน</h1><di
  <div><label>ที่อยู่ (ถ้ามี)</label><input value="${esc(s.addr)}" onchange="db.shop.addr=this.value;save()"></div>
  <div><label>ข้อความท้ายใบเสร็จ</label><input value="${esc(s.foot)}" onchange="db.shop.foot=this.value;save()"></div>
  <div><label>โลโก้ร้าน</label><input type="file" accept="image/*" onchange="logo(this)">${s.logo?`<img src="${s.logo}" style="height:50px;margin-top:8px"> <button class="btn sm d" onclick="db.shop.logo='';save();draw()">ลบ</button>`:''}</div></div></div>
- <h2>ประเภทผ้า และราคาต่อชิ้น</h2><div class="card">${db.garments.map(g=>`<div class="row" style="margin-bottom:8px"><input class="sp" value="${esc(g.name)}" onchange="gar('${g.id}','name',this.value)"><input type="number" style="width:110px" value="${g.price}" onchange="gar('${g.id}','price',+this.value)"><span>บาท</span><button class="btn sm d" onclick="delGar('${g.id}')">ลบ</button></div>`).join('')}<button class="btn" onclick="db.garments.push({id:uid(),name:'รายการใหม่',price:20});save();draw()">+ เพิ่มประเภทผ้า</button></div>
+ <h2>ประเภทผ้า / บริการ และราคา</h2><div class="card">${db.garments.map(g=>`<div class="row" style="margin-bottom:8px"><input class="sp" value="${esc(g.name)}" onchange="gar('${g.id}','name',this.value)"><input type="number" style="width:100px" value="${g.price}" onchange="gar('${g.id}','price',+this.value)"><span style="min-width:70px">บาท/${g.unit}</span><select style="width:100px" onchange="gar('${g.id}','unit',this.value)">${UN.map(u=>`<option ${u==g.unit?'selected':''}>${u}</option>`).join('')}</select><button class="btn sm d" onclick="delGar('${g.id}')">ลบ</button></div>`).join('')}<button class="btn" onclick="db.garments.push({id:uid(),name:'รายการใหม่',unit:'ชิ้น',price:20});save();draw()">+ เพิ่มประเภทผ้า/บริการ</button></div>
+ <p style="color:#5b7488">ตัวอย่างประเภทบริการ: ผ้ารีด, ซักรีด, ซักพับ (ตั้งหน่วยเป็น "กก."), ซักแห้ง, เครื่องนอน — รายการหน่วย "ชิ้น" ใช้หักจากแพ็คเกจได้ ส่วนหน่วย "กก." จะคิดราคาตามน้ำหนักเสมอ</p>
+ <h2>QR โอนเงิน (ท้ายใบเสร็จ)</h2><div class="card"><input type="file" accept="image/*" onchange="qrimg(this)">${s.qr?`<br><img src="${s.qr}" style="height:120px;margin-top:8px"> <button class="btn sm d" onclick="db.shop.qr='';save();draw()">ลบ</button>`:''}</div>
  <h2>สำรองข้อมูล</h2><div class="card row"><button class="btn" onclick="backup()">ดาวน์โหลดไฟล์สำรอง</button><label class="btn s" style="margin:0;cursor:pointer">กู้คืนจากไฟล์<input type="file" accept=".json" hidden onchange="restore(this)"></label><span style="color:#5b7488;font-size:15px">ข้อมูลอยู่ในแท็บเล็ตเครื่องนี้ ควรสำรองสัปดาห์ละครั้ง</span></div>`};
 function gar(id,k,v){db.garments.find(g=>g.id==id)[k]=v;save()}
 function delGar(id){if(confirm('ลบประเภทนี้?')){db.garments=db.garments.filter(g=>g.id!=id);delete cart[id];save();draw()}}
 function logo(el){const f=el.files[0];if(!f)return;const im=new Image,rd=new FileReader;rd.onload=()=>{im.onload=()=>{const k=Math.min(1,300/im.width),c=document.createElement('canvas');c.width=im.width*k;c.height=im.height*k;const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,c.width,c.height);x.drawImage(im,0,0,c.width,c.height);db.shop.logo=c.toDataURL('image/png');save();draw()};im.src=rd.result};rd.readAsDataURL(f)}
+function qrimg(el){const f=el.files[0];if(!f)return;const im=new Image,rd=new FileReader;rd.onload=()=>{im.onload=()=>{const k=Math.min(1,500/im.width),c=document.createElement('canvas');c.width=im.width*k;c.height=im.height*k;const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,c.width,c.height);x.drawImage(im,0,0,c.width,c.height);db.shop.qr=c.toDataURL('image/png');save();draw()};im.src=rd.result};rd.readAsDataURL(f)}
 function backup(){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(db)],{type:'application/json'}));a.download='laundry-backup-'+today()+'.json';a.click()}
 function restore(el){const f=el.files[0];if(!f||!confirm('ข้อมูลปัจจุบันจะถูกแทนที่ ต้องการดำเนินการต่อ?'))return;const rd=new FileReader;rd.onload=()=>{try{db=JSON.parse(rd.result);save();draw();alert('กู้คืนสำเร็จ')}catch(e){alert('ไฟล์ไม่ถูกต้อง')}};rd.readAsText(f)}
 const CI=['ค่าบริการซักรีด','ค่าแพ็คเกจ','อื่นๆ'],CO=['ค่าน้ำยา/อุปกรณ์','ค่าน้ำ-ไฟ','ค่าเช่า','ค่าแรง','อื่นๆ'];
