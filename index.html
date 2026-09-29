@@ -57,7 +57,7 @@ const ld=d=>{d=d||new Date();return new Date(d.getTime()-d.getTimezoneOffset()*6
 const today=()=>ld(),addDays=n=>{const d=new Date();d.setDate(d.getDate()+n);return ld(d)};
 const fm=n=>Number(n||0).toLocaleString('th-TH'),dt=s=>s?s.split('-').reverse().join('/'):'-';
 let tab='home',cart={},sel='',from=today().slice(0,8)+'01',to=today(),q='';
-const TABS=[['home','หน้าหลัก'],['order','รับผ้า / คิดเงิน'],['cust','ลูกค้า'],['pkg','แพ็คเกจ'],['acct','บัญชี'],['set','ตั้งค่าร้าน']];
+const TABS=[['home','หน้าหลัก'],['order','รับผ้า / คิดเงิน'],['cust','ลูกค้า'],['pkg','แพ็คเกจ'],['rc','ใบเสร็จ'],['acct','บัญชี'],['set','ตั้งค่าร้าน']];
 function go(t){tab=t;draw()}
 function draw(){
  $('#nav').innerHTML=`<div class="brand">${db.shop.logo?`<img src="${db.shop.logo}">`:''}<span>${esc(db.shop.name)}</span></div>`+TABS.map(t=>`<button class="${t[0]==tab?'on':''}" onclick="go('${t[0]}')">${t[1]}</button>`).join('');
@@ -76,7 +76,7 @@ function form(title,fs,v,ok){
 function mkRc(r){r.no='R'+today().replace(/-/g,'').slice(2)+'-'+String(++db.seq).padStart(3,'0');r.date=today();r.time=new Date().toTimeString().slice(0,5);db.rc.push(r);return r}
 function showRc(r){
  const s=db.shop;
- const m=modal(`<div id="rc"><div class="c">${s.logo?`<img src="${s.logo}"><br>`:''}<b style="font-size:16px">${esc(s.name)}</b><br>${s.phone?'โทร '+esc(s.phone)+'<br>':''}${esc(s.addr)}</div><hr>
+ const m=modal(`${r.void?'<div class="c" style="color:var(--red);font-weight:700;margin-bottom:8px">*** ใบเสร็จนี้ถูกยกเลิกแล้ว ***</div>':''}<div id="rc"><div class="c">${s.logo?`<img src="${s.logo}"><br>`:''}<b style="font-size:16px">${esc(s.name)}</b><br>${s.phone?'โทร '+esc(s.phone)+'<br>':''}${esc(s.addr)}</div><hr>
  <div class="l"><span>เลขที่ ${r.no}</span><span>${dt(r.date)} ${r.time||''}</span></div>
  <div>ลูกค้า: <b>${esc(r.name)}</b>${r.phone?' ('+esc(r.phone)+')':''}</div><hr>
  ${r.lines.map(l=>`<div class="l"><span>${esc(l.t)}${l.q?' x'+l.q+(l.unit||''):''}</span><span>${l.price!=null?'@'+fm(l.price):''}</span></div>${l.note||l.a!==''?`<div class="l"><span style="font-size:12px;color:#444">${l.note||''}</span><span>${l.a===''?'':fm(l.a)+' บาท'}</span></div>`:''}`).join('')}<hr>
@@ -88,8 +88,26 @@ function showRc(r){
  m.querySelector('#x').onclick=m.close;m.querySelector('#p').onclick=()=>window.print();
 }
 const reprint=id=>showRc(db.rc.find(r=>r.no==id));
+function voidRc(no){
+ if(!confirm('ยืนยันยกเลิกใบเสร็จ '+no+'?\n\nรายการนี้จะถูกตัดออกจากยอดรายรับในบัญชีทันที\nแต่ระบบจะไม่ปรับคืนยอดคงเหลือแพ็คเกจของลูกค้าให้อัตโนมัติ ถ้าต้องการคืนยอด กรุณาแก้ไขที่หน้าลูกค้าเอง'))return;
+ const r=db.rc.find(x=>x.no==no);if(!r||r.void)return;
+ r.void=true;r.voidAt=new Date().toISOString();
+ db.ledger=db.ledger.filter(l=>l.rc!=no);
+ save();draw();
+}
+function delRc(no){
+ if(!confirm('ยืนยันลบใบเสร็จ '+no+' ถาวร?\n\nการลบนี้กู้คืนไม่ได้ และจะลบรายการรายรับที่เกี่ยวข้องในบัญชีด้วย'))return;
+ db.rc=db.rc.filter(r=>r.no!=no);
+ db.ledger=db.ledger.filter(l=>l.rc!=no);
+ save();draw();
+}
 // ---------- views ----------
 const V={};
+V.rc=()=>{
+ const l=db.rc.filter(r=>r.date>=from&&r.date<=to).slice().reverse();
+ return `<h1>ใบเสร็จ</h1><div class="row"><div><label>ตั้งแต่</label><input type="date" value="${from}" onchange="from=this.value;draw()"></div><div><label>ถึง</label><input type="date" value="${to}" onchange="to=this.value;draw()"></div><div class="sp"></div><button class="btn sm s" onclick="setR(1)">เดือนนี้</button><button class="btn sm s" onclick="setR(3)">3 เดือน</button></div><br>
+ ${l.length?`<table><tr><th>เลขที่</th><th>วันที่</th><th>ลูกค้า</th><th class="r">ยอด</th><th>สถานะ</th><th></th></tr>${l.map(r=>`<tr${r.void?' style="opacity:.5"':''}><td>${r.no}</td><td>${dt(r.date)}</td><td>${esc(r.name)}</td><td class="r">${fm(r.total)}</td><td>${r.void?'<span class="tag x">ยกเลิกแล้ว</span>':'<span class="tag">ปกติ</span>'}</td><td class="r"><button class="btn sm s" onclick="reprint('${r.no}')">ดู/พิมพ์</button> ${r.void?'':`<button class="btn sm" style="background:var(--sun);color:var(--ink)" onclick="voidRc('${r.no}')">ยกเลิก</button>`} <button class="btn sm d" onclick="delRc('${r.no}')">ลบ</button></td></tr>`).join('')}</table>`:'<div class="card">ไม่มีใบเสร็จในช่วงนี้</div>'}`;
+};
 V.home=()=>{
  const t=today(),td=db.ledger.filter(l=>l.date==t),inc=td.filter(l=>l.type=='in').reduce((a,l)=>a+l.amt,0);
  const low=db.customers.filter(c=>c.pkgId&&(c.left<=5||c.exp<=addDays(3)));
@@ -98,7 +116,7 @@ V.home=()=>{
  <div class="g g4"><button class="big" onclick="go('order')">รับผ้า / คิดเงิน</button><button class="big b4" onclick="go('cust')">ลูกค้า / ต่อแพ็คเกจ</button><button class="big b3" onclick="go('acct')">บัญชี</button><button class="big b2" onclick="go('pkg')">แพ็คเกจ</button></div>
  <div class="g g4" style="margin-top:14px"><div class="card stat"><b>${fm(inc)}</b><span>รายรับวันนี้ (บาท)</span></div><div class="card stat"><b>${db.rc.filter(r=>r.date==t&&r.kind=='order').length}</b><span>บิลรับผ้าวันนี้</span></div><div class="card stat"><b>${db.customers.filter(active).length}</b><span>ลูกค้าแพ็คเกจที่ใช้งานอยู่</span></div><div class="card stat"><b>${low.length}</b><span>ใกล้หมด/ใกล้หมดอายุ</span></div></div>
  <h2>ต้องติดตาม</h2>${low.length?`<div class="g g3">${low.map(c=>`<div class="card"><b>${esc(c.name)}</b><br>${esc(c.pkgName)}<br><span class="tag ${c.left<=0||c.exp<t?'x':'w'}">เหลือ ${c.left} ชิ้น</span> <span class="tag">ถึง ${dt(c.exp)}</span></div>`).join('')}</div>`:'<div class="card">ไม่มีรายการ</div>'}
- <h2>ใบเสร็จล่าสุด</h2>${rec.length?`<table>${rec.map(r=>`<tr><td>${r.no}</td><td>${esc(r.name)}</td><td class="r">${fm(r.total)} บาท</td><td class="r"><button class="btn sm s" onclick="reprint('${r.no}')">ดู/พิมพ์</button></td></tr>`).join('')}</table>`:'<div class="card">ยังไม่มีใบเสร็จ</div>'}`;
+ <div class="row"><h2 class="sp" style="margin:18px 0 8px">ใบเสร็จล่าสุด</h2><button class="btn sm s" onclick="go('rc')">ดูทั้งหมด / ยกเลิก-ลบ</button></div>${rec.length?`<table>${rec.map(r=>`<tr${r.void?' style="opacity:.5"':''}><td>${r.no}</td><td>${esc(r.name)}</td><td class="r">${fm(r.total)} บาท</td><td>${r.void?'<span class="tag x">ยกเลิกแล้ว</span>':''}</td><td class="r"><button class="btn sm s" onclick="reprint('${r.no}')">ดู/พิมพ์</button></td></tr>`).join('')}</table>`:'<div class="card">ยังไม่มีใบเสร็จ</div>'}`;
 };
 V.order=()=>{
  const c=cust(sel),pieceG=db.garments.filter(g=>g.unit!='กก.'),wtG=db.garments.filter(g=>g.unit=='กก.');
