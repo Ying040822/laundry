@@ -81,7 +81,7 @@ function showRc(r){
  <div>ลูกค้า: <b>${esc(r.name)}</b>${r.phone?' ('+esc(r.phone)+')':''}</div><hr>
  ${r.lines.map(l=>`<div class="l"><span>${esc(l.t)}${l.q?' x'+l.q+(l.unit||''):''}</span><span>${l.price!=null?'@'+fm(l.price):''}</span></div>${l.note||l.a!==''?`<div class="l"><span style="font-size:12px;color:#444">${l.note||''}</span><span>${l.a===''?'':fm(l.a)+' บาท'}</span></div>`:''}`).join('')}<hr>
  <div class="l"><b>รวมเป็นเงิน</b><b>${fm(r.total)} บาท</b></div>
- ${r.left!=null?`<div class="l"><span>แพ็คเกจคงเหลือ</span><b>${r.left} ชิ้น</b></div>`:''}
+ ${r.left!=null?(r.used!=null?`<div class="l"><span>ยอดคงเหลือก่อนหน้า</span><span>${r.before} ชิ้น</span></div><div class="l"><span>ใช้ไปครั้งนี้</span><span>${r.used} ชิ้น</span></div><div class="l"><b>คงเหลือ</b><b>${r.left} ชิ้น</b></div>`:`<div class="l"><span>แพ็คเกจคงเหลือ</span><b>${r.left} ชิ้น</b></div>`):''}
  ${r.exp?`<div class="l"><span>หมดอายุ</span><span>${dt(r.exp)}</span></div>`:''}
  <hr>${s.qr?`<div class="c"><img src="${s.qr}"><br><small>สแกนเพื่อชำระเงิน</small></div><hr>`:''}<div class="c">${esc(s.foot)}</div></div>
  <div class="row noprint" style="margin-top:14px"><button class="btn s sp" id="x">ปิด</button><button class="btn sp" id="p">พิมพ์ใบเสร็จ 80mm</button></div>`);
@@ -145,7 +145,7 @@ function checkout(){
  const c=cust(sel);
  const lines=cl.lines.map(l=>({t:l.g.name,q:l.q,unit:l.g.unit,price:l.g.price,a:l.pay*l.g.price,note:l.used?`ใช้แพ็คเกจ ${l.used}${l.g.unit}, จ่าย ${l.pay}${l.g.unit}`:''}));
  if(c&&cl.use){c.left=cl.left}
- const r=mkRc({kind:'order',name:c?c.name:'ลูกค้าทั่วไป',phone:c?c.phone:'',lines,total:cl.pay,left:cl.left,exp:c&&active(c)||cl.use?c.exp:''});
+ const r=mkRc({kind:'order',name:c?c.name:'ลูกค้าทั่วไป',phone:c?c.phone:'',lines,total:cl.pay,left:cl.left,before:cl.left!=null?cl.left+cl.use:null,used:cl.use,exp:c&&active(c)||cl.use?c.exp:''});
  if(cl.pay>0)db.ledger.push({id:uid(),date:r.date,type:'in',title:'ซักรีด '+r.name+' ('+r.no+')',cat:'ค่าบริการซักรีด',amt:cl.pay,rc:r.no});
  save();cart={};draw();showRc(r);
 }
