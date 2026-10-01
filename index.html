@@ -56,7 +56,7 @@ const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&g
 const ld=d=>{d=d||new Date();return new Date(d.getTime()-d.getTimezoneOffset()*6e4).toISOString().slice(0,10)};
 const today=()=>ld(),addDays=n=>{const d=new Date();d.setDate(d.getDate()+n);return ld(d)};
 const fm=n=>Number(n||0).toLocaleString('th-TH'),dt=s=>s?s.split('-').reverse().join('/'):'-';
-let tab='home',cart={},sel='',from=today().slice(0,8)+'01',to=today(),q='';
+let tab='home',cart={},sel='',renew=false,from=today().slice(0,8)+'01',to=today(),q='';
 const TABS=[['home','หน้าหลัก'],['order','รับผ้า / คิดเงิน'],['cust','ลูกค้า'],['pkg','แพ็คเกจ'],['rc','ใบเสร็จ'],['acct','บัญชี'],['set','ตั้งค่าร้าน']];
 function go(t){tab=t;draw()}
 function draw(){
@@ -81,7 +81,7 @@ function showRc(r){
  <div>ลูกค้า: <b>${esc(r.name)}</b>${r.phone?' ('+esc(r.phone)+')':''}</div><hr>
  ${r.lines.map(l=>`<div class="l"><span>${esc(l.t)}${l.q?' x'+l.q+(l.unit||''):''}</span><span>${l.price!=null?'@'+fm(l.price):''}</span></div>${l.note||l.a!==''?`<div class="l"><span style="font-size:12px;color:#444">${l.note||''}</span><span>${l.a===''?'':fm(l.a)+' บาท'}</span></div>`:''}`).join('')}<hr>
  <div class="l"><b>รวมเป็นเงิน</b><b>${fm(r.total)} บาท</b></div>
- ${r.left!=null?(r.used!=null?`<div class="l"><span>ยอดคงเหลือก่อนหน้า</span><span>${r.before} ชิ้น</span></div><div class="l"><span>ใช้ไปครั้งนี้</span><span>${r.used} ชิ้น</span></div><div class="l"><b>คงเหลือ</b><b>${r.left} ชิ้น</b></div>`:`<div class="l"><span>แพ็คเกจคงเหลือ</span><b>${r.left} ชิ้น</b></div>`):''}
+ ${r.left!=null?(r.used!=null?`<div class="l"><span>ยอดคงเหลือก่อนหน้า</span><span>${r.before} ชิ้น</span></div><div class="l"><span>ใช้จากแพ็คเกจเดิม</span><span>${r.used} ชิ้น</span></div>${r.renewed?`<div class="l"><span>เกินแพ็คเกจเดิม</span><span>${r.overflow} ชิ้น</span></div><div class="l"><span>ค่าต่อแพ็คเกจใหม่</span><span>${fm(r.renewFee)} บาท</span></div>`:''}<div class="l"><b>คงเหลือ${r.renewed?"หลังต่อแพ็คเกจ":""}</b><b>${r.left} ชิ้น</b></div>`:`<div class="l"><span>แพ็คเกจคงเหลือ</span><b>${r.left} ชิ้น</b></div>`):''}
  ${r.exp?`<div class="l"><span>หมดอายุ</span><span>${dt(r.exp)}</span></div>`:''}
  <hr>${s.qr?`<div class="c"><img src="${s.qr}"><br><small>สแกนเพื่อชำระเงิน</small></div><hr>`:''}<div class="c">${esc(s.foot)}</div></div>
  <div class="row noprint" style="margin-top:14px"><button class="btn s sp" id="x">ปิด</button><button class="btn sp" id="p">พิมพ์ใบเสร็จ 80mm</button></div>`);
@@ -122,32 +122,43 @@ V.order=()=>{
  const c=cust(sel),pieceG=db.garments.filter(g=>g.unit!='กก.'),wtG=db.garments.filter(g=>g.unit=='กก.');
  const pcsTot=pieceG.reduce((a,g)=>a+(cart[g.id]||0),0),kgTot=wtG.reduce((a,g)=>a+(cart[g.id]||0),0),cl=calc();
  return `<h1>รับผ้า / คิดเงิน</h1>
- <label>ลูกค้า</label><select onchange="sel=this.value;draw()"><option value="">ลูกค้าทั่วไป (จ่ายรายวัน)</option>${db.customers.map(x=>`<option value="${x.id}" ${x.id==sel?'selected':''}>${esc(x.name)}${active(x)?' — เหลือ '+x.left+' ชิ้น':''}</option>`).join('')}</select>
- ${c&&active(c)?`<p><span class="tag">${esc(c.pkgName)}</span> คงเหลือ <b>${c.left}</b> ชิ้น ถึง ${dt(c.exp)}</p>`:c?'<p><span class="tag x">ไม่มีแพ็คเกจที่ใช้งานได้ — คิดราคาตามรายการ</span></p>':''}
+ <label>ลูกค้า</label><select onchange="sel=this.value;renew=false;draw()"><option value="">ลูกค้าทั่วไป (จ่ายรายวัน)</option>${db.customers.map(x=>`<option value="${x.id}" ${x.id==sel?'selected':''}>${esc(x.name)}${active(x)?' — เหลือ '+x.left+' ชิ้น':''}</option>`).join('')}</select>
+ ${c&&active(c)?`<p><span class="tag">${esc(c.pkgName)}</span> คงเหลือ <b>${c.left}</b> ชิ้น ถึง ${dt(c.exp)}</p><label class="row" style="gap:8px;align-items:center;cursor:pointer"><input type="checkbox" style="width:auto" ${renew?'checked':''} onchange="renew=this.checked;draw()"><span>ถ้าชิ้นเกินแพ็คเกจ ให้ต่อแพ็คเกจใหม่ทันที (แทนคิดเงินสดส่วนเกิน)</span></label>${cl.renewInfo?`<p><span class="tag w">เกินแพ็คเกจเดิม ${cl.overflow} ชิ้น</span> → ต่อแพ็คเกจ <b>${esc(cl.renewInfo.pkg.name)}</b>${cl.renewInfo.cycles>1?' x'+cl.renewInfo.cycles:''} ราคา ${fm(cl.renewInfo.fee)} บาท (เหลือใหม่ ${cl.renewInfo.newLeft} ชิ้น ถึง ${dt(cl.renewInfo.newExp)})</p>`:''}`:c?'<p><span class="tag x">ไม่มีแพ็คเกจที่ใช้งานได้ — คิดราคาตามรายการ</span></p>':''}
  <h2>รายการคิดตามชิ้น${c&&active(c)?' (ใช้แพ็คเกจได้)':''}</h2><div class="g g3">${pieceG.map(g=>`<div class="gt ${cart[g.id]?'on':''}"><b>${esc(g.name)}</b><br><span style="font-size:14px">${fm(g.price)} บาท/ชิ้น</span><div class="q"><button onclick="qty('${g.id}',-1)">−</button><b>${cart[g.id]||0}</b><button onclick="qty('${g.id}',1)">+</button></div></div>`).join('')||'<div class="card">ยังไม่มีรายการ เพิ่มได้ในหน้าตั้งค่าร้าน</div>'}</div>
  ${wtG.length?`<h2>รายการคิดตามน้ำหนัก (กก.)</h2><div class="g g3">${wtG.map(g=>`<div class="gt ${cart[g.id]?'on':''}"><b>${esc(g.name)}</b><br><span style="font-size:14px">${fm(g.price)} บาท/กก.</span><div class="row" style="justify-content:center;margin-top:8px"><input type="number" min="0" step="0.1" style="text-align:center" value="${cart[g.id]||''}" placeholder="0" oninput="wqty('${g.id}',this.value)"></div></div>`).join('')}</div>`:''}
- <div class="bar"><span>รวม <b>${pcsTot}</b> ชิ้น${kgTot?' + '+kgTot+' กก.':''}</span>${cl.use?`<span>ใช้แพ็คเกจ ${cl.use} ชิ้น (เหลือ ${cl.left})</span>`:''}<span class="sp" style="font-size:24px;text-align:right">ต้องชำระ <b>${fm(cl.pay)}</b> บาท</span><button class="btn s" onclick="cart={};draw()">ล้าง</button><button class="btn" style="background:var(--sun);color:var(--ink);font-weight:700" onclick="checkout()">บันทึก + พิมพ์ใบเสร็จ</button></div>`;
+ <div class="bar"><span>รวม <b>${pcsTot}</b> ชิ้น${kgTot?' + '+kgTot+' กก.':''}</span>${cl.use?`<span>ใช้แพ็คเกจ ${cl.use} ชิ้น (เหลือ ${cl.left})</span>`:''}<span class="sp" style="font-size:24px;text-align:right">ต้องชำระ <b>${fm(cl.pay)}</b> บาท</span><button class="btn s" onclick="cart={};renew=false;draw()">ล้าง</button><button class="btn" style="background:var(--sun);color:var(--ink);font-weight:700" onclick="checkout()">บันทึก + พิมพ์ใบเสร็จ</button></div>`;
 };
 function qty(id,d){cart[id]=Math.max(0,(cart[id]||0)+d);if(!cart[id])delete cart[id];draw()}
 function wqty(id,v){const n=parseFloat(v);if(n>0)cart[id]=n;else delete cart[id];draw()}
 function calc(){
  const c=cust(sel),pieceG=db.garments.filter(g=>g.unit!='กก.'),wtG=db.garments.filter(g=>g.unit=='กก.');
  const pcsTot=pieceG.reduce((a,g)=>a+(cart[g.id]||0),0);
- const use=c&&active(c)?Math.min(c.left,pcsTot):0;
+ const avail=c&&active(c)?c.left:0,use=Math.min(avail,pcsTot),overflow=pcsTot-use;
+ let renewInfo=null;
+ if(renew&&overflow>0&&c&&c.pkgId){
+  const pkg=db.packages.find(p=>p.id==c.pkgId);
+  if(pkg&&pkg.pieces>0){const cycles=Math.ceil(overflow/pkg.pieces);renewInfo={pkg,cycles,fee:cycles*pkg.price,newLeft:cycles*pkg.pieces-overflow,newExp:addDays(pkg.days)}}
+ }
  let bud=use,pieceLines=[];
- pieceG.forEach(g=>{const q=cart[g.id]||0;if(!q)return;const u=Math.min(bud,q);bud-=u;const pay=q-u;pieceLines.push({g,q,used:u,pay,amt:pay*g.price})});
+ pieceG.forEach(g=>{const q=cart[g.id]||0;if(!q)return;const u=Math.min(bud,q);bud-=u;const pay=renewInfo?0:(q-u);pieceLines.push({g,q,used:u,pay,amt:pay*g.price})});
  const wtLines=wtG.filter(g=>cart[g.id]).map(g=>({g,q:cart[g.id],used:0,pay:cart[g.id],amt:cart[g.id]*g.price}));
- const lines=pieceLines.concat(wtLines),pay=lines.reduce((a,l)=>a+l.amt,0);
- return{lines,use,pay,left:c&&active(c)?c.left-use:null,any:lines.some(l=>l.q>0)};
+ const lines=pieceLines.concat(wtLines),itemPay=lines.reduce((a,l)=>a+l.amt,0),pay=itemPay+(renewInfo?renewInfo.fee:0);
+ return{lines,use,overflow,renewInfo,pay,before:c&&c.pkgId?avail:null,left:renewInfo?renewInfo.newLeft:(c&&active(c)?avail-use:null),any:lines.some(l=>l.q>0)};
 }
 function checkout(){
  const cl=calc();if(!cl.any)return alert('กรุณาเลือกจำนวนผ้าก่อน');
  const c=cust(sel);
  const lines=cl.lines.map(l=>({t:l.g.name,q:l.q,unit:l.g.unit,price:l.g.price,a:l.pay*l.g.price,note:l.used?`ใช้แพ็คเกจ ${l.used}${l.g.unit}, จ่าย ${l.pay}${l.g.unit}`:''}));
- if(c&&cl.use){c.left=cl.left}
- const r=mkRc({kind:'order',name:c?c.name:'ลูกค้าทั่วไป',phone:c?c.phone:'',lines,total:cl.pay,left:cl.left,before:cl.left!=null?cl.left+cl.use:null,used:cl.use,exp:c&&active(c)||cl.use?c.exp:''});
- if(cl.pay>0)db.ledger.push({id:uid(),date:r.date,type:'in',title:'ซักรีด '+r.name+' ('+r.no+')',cat:'ค่าบริการซักรีด',amt:cl.pay,rc:r.no});
- save();cart={};draw();showRc(r);
+ let exp=c&&active(c)||cl.use?c.exp:'';
+ if(cl.renewInfo){
+  lines.push({t:esc(cl.renewInfo.pkg.name)+' (ต่อแพ็คเกจใหม่อัตโนมัติ'+(cl.renewInfo.cycles>1?' x'+cl.renewInfo.cycles:'')+')',q:'',a:cl.renewInfo.fee});
+  c.left=cl.renewInfo.newLeft;c.exp=cl.renewInfo.newExp;exp=c.exp;
+ }else if(c&&cl.use){c.left=cl.left}
+ const r=mkRc({kind:'order',name:c?c.name:'ลูกค้าทั่วไป',phone:c?c.phone:'',lines,total:cl.pay,left:cl.renewInfo?cl.renewInfo.newLeft:cl.left,before:cl.before,used:cl.use,overflow:cl.overflow,renewed:!!cl.renewInfo,renewFee:cl.renewInfo?cl.renewInfo.fee:0,exp});
+ const svcPay=cl.pay-(cl.renewInfo?cl.renewInfo.fee:0);
+ if(svcPay>0)db.ledger.push({id:uid(),date:r.date,type:'in',title:'ซักรีด '+r.name+' ('+r.no+')',cat:'ค่าบริการซักรีด',amt:svcPay,rc:r.no});
+ if(cl.renewInfo)db.ledger.push({id:uid(),date:r.date,type:'in',title:'ต่อแพ็คเกจอัตโนมัติ '+cl.renewInfo.pkg.name+' - '+r.name+' ('+r.no+')',cat:'ค่าแพ็คเกจ',amt:cl.renewInfo.fee,rc:r.no});
+ save();cart={};renew=false;draw();showRc(r);
 }
 V.cust=()=>{
  const l=db.customers.filter(c=>(c.name+c.phone+(c.line||'')).includes(q));
