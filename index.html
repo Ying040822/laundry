@@ -84,10 +84,44 @@ function showRc(r){
  ${r.left!=null?(r.used!=null?`<div class="l"><span>ยอดคงเหลือก่อนหน้า</span><span>${r.before} ชิ้น</span></div><div class="l"><span>ใช้จากแพ็คเกจเดิม</span><span>${r.used} ชิ้น</span></div>${r.renewed?`<div class="l"><span>เกินแพ็คเกจเดิม</span><span>${r.overflow} ชิ้น</span></div><div class="l"><span>ค่าต่อแพ็คเกจใหม่</span><span>${fm(r.renewFee)} บาท</span></div>`:''}<div class="l"><b>คงเหลือ${r.renewed?"หลังต่อแพ็คเกจ":""}</b><b>${r.left} ชิ้น</b></div>`:`<div class="l"><span>แพ็คเกจคงเหลือ</span><b>${r.left} ชิ้น</b></div>`):''}
  ${r.exp?`<div class="l"><span>หมดอายุ</span><span>${dt(r.exp)}</span></div>`:''}
  <hr>${s.qr?`<div class="c"><img src="${s.qr}"><br><small>สแกนเพื่อชำระเงิน</small></div><hr>`:''}<div class="c">${esc(s.foot)}</div></div>
- <div class="row noprint" style="margin-top:14px"><button class="btn s sp" id="x">ปิด</button><button class="btn sp" id="p">พิมพ์ใบเสร็จ 80mm</button></div>`);
+ <div class="row noprint" style="margin-top:14px"><button class="btn s sp" id="x">ปิด</button><button class="btn s" id="q" title="เร็วกว่า แต่ไม่มีโลโก้/QR - ต้องติดตั้ง RawBT">พิมพ์ด่วน</button><button class="btn sp" id="p">พิมพ์ใบเสร็จ 80mm</button></div>`);
  m.querySelector('#x').onclick=m.close;m.querySelector('#p').onclick=()=>window.print();
+ m.querySelector('#q').onclick=()=>rawbtPrint(r);
 }
 const reprint=id=>showRc(db.rc.find(r=>r.no==id));
+function rawbtText(r){
+ const s=db.shop,W=32,ln=c=>'-'.repeat(W);
+ let t=s.name+'\n';
+ if(s.phone)t+='โทร '+s.phone+'\n';
+ if(s.addr)t+=s.addr+'\n';
+ t+=ln()+'\n';
+ t+='เลขที่ '+r.no+'\n'+dt(r.date)+' '+(r.time||'')+'\n';
+ t+='ลูกค้า: '+r.name+(r.phone?' ('+r.phone+')':'')+'\n';
+ t+=ln()+'\n';
+ r.lines.forEach(l=>{
+  t+=l.t+(l.q?' x'+l.q+(l.unit||''):'')+(l.price!=null?'  @'+fm(l.price):'')+'\n';
+  if(l.note||l.a!=='')t+='  '+(l.note||'')+'  '+(l.a===''?'':fm(l.a)+' บาท')+'\n';
+ });
+ t+=ln()+'\n';
+ t+='รวมเป็นเงิน: '+fm(r.total)+' บาท\n';
+ if(r.left!=null){
+  if(r.used!=null){
+   t+='ยอดคงเหลือก่อนหน้า: '+r.before+' ชิ้น\n';
+   t+='ใช้จากแพ็คเกจเดิม: '+r.used+' ชิ้น\n';
+   if(r.renewed){t+='เกินแพ็คเกจเดิม: '+r.overflow+' ชิ้น\n';t+='ค่าต่อแพ็คเกจใหม่: '+fm(r.renewFee)+' บาท\n'}
+   t+='คงเหลือ'+(r.renewed?'หลังต่อแพ็คเกจ':'')+': '+r.left+' ชิ้น\n';
+  }else t+='แพ็คเกจคงเหลือ: '+r.left+' ชิ้น\n';
+ }
+ if(r.exp)t+='หมดอายุ: '+dt(r.exp)+'\n';
+ t+=ln()+'\n'+s.foot+'\n\n\n';
+ return t;
+}
+function rawbtPrint(r){
+ try{
+  const b64=btoa(unescape(encodeURIComponent(rawbtText(r))));
+  location.href='rawbt:data:text/plain;charset=UTF-8;base64,'+b64;
+ }catch(e){alert('เปิด RawBT ไม่สำเร็จ อุปกรณ์นี้อาจยังไม่ได้ติดตั้งแอป RawBT หรือไม่รองรับ ลองใช้ปุ่ม "พิมพ์ใบเสร็จ 80mm" แทน')}
+}
 function voidRc(no){
  if(!confirm('ยืนยันยกเลิกใบเสร็จ '+no+'?\n\nรายการนี้จะถูกตัดออกจากยอดรายรับในบัญชีทันที\nแต่ระบบจะไม่ปรับคืนยอดคงเหลือแพ็คเกจของลูกค้าให้อัตโนมัติ ถ้าต้องการคืนยอด กรุณาแก้ไขที่หน้าลูกค้าเอง'))return;
  const r=db.rc.find(x=>x.no==no);if(!r||r.void)return;
